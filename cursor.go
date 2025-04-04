@@ -9,6 +9,7 @@ const (
 	normal = iota
 	insert
 	visual
+	command
 )
 
 // Cursor stores the location of the cursor in the view

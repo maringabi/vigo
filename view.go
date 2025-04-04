@@ -70,12 +70,17 @@ func (v *View) handleEvent(event tcell.Event) int {
 			v.cursor.right()
 			ret = 2
 		case tcell.KeyRune:
+			r := e.Rune()
 			if v.cursor.mode == insert {
-				v.buf.insert(v.cursor.loc, string(e.Rune()))
+				v.buf.insert(v.cursor.loc, string(r))
 				v.cursor.right()
 				ret = 2
+			} else if v.cursor.mode == command {
+				switch r {
+				case 'w':
+					v.buf.save()
+				}
 			} else {
-				r := e.Rune()
 				switch r {
 				case 'i':
 					v.cursor.mode = insert
@@ -91,6 +96,8 @@ func (v *View) handleEvent(event tcell.Event) int {
 				case 'h':
 					v.cursor.left()
 					ret = 1
+				case ':':
+					v.cursor.mode = command
 				}
 			}
 		}
