@@ -2,11 +2,7 @@ module github.com/gbrlmarn/vigo
 
 go 1.24.1
 
-require (
-	github.com/gdamore/tcell v1.4.0
-	github.com/gdamore/tcell/v2 v2.8.1
-	github.com/mattn/go-isatty v0.0.20
-)
+require github.com/gdamore/tcell/v2 v2.8.1
 
 require (
 	github.com/gdamore/encoding v1.0.1 // indirect
