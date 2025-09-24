@@ -37,6 +37,10 @@ type editor struct {
 
 // Function for initializing cursor state based on file size
 func initCursor(c *cursor, lines []string) {
+	c.x = 0
+	c.y = 0
+	c.scrolloffset = 0
+	c.scrolloffset = 0
 	if c.y+c.scrolloffset >= len(lines) {
 		c.y = len(lines) - 1 - c.scrolloffset
 		if c.y < 0 {
@@ -192,7 +196,10 @@ func handleNormalMode(e *editor, ev *tcell.EventKey) {
 				e.cursor.x--
 			}
 		case 'l': // move right
-			e.cursor.x++
+			lineIdx := e.cursor.y + e.cursor.scrolloffset
+			if lineIdx < len(e.lines) && e.cursor.x < len(e.lines[lineIdx]) {
+				e.cursor.x++
+			}
 		case ':':
 			e.mode = COMMAND_MODE
 			e.cmdbuf = ""
@@ -313,6 +320,11 @@ func main() {
 	}
 	if err := scanner.Err(); err != nil {
 		log.Fatalf("Failed to read file: %v", err)
+	}
+
+	// Handle empty file
+	if len(lines) == 0 {
+		lines = append(lines, "")
 	}
 
 	// Init editor structure
