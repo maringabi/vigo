@@ -141,6 +141,7 @@ func wlines(filename string, lines []string) error {
 
 // Handle NORMAL_MODE functionalities
 func handleNormalMode(e *editor, ev *tcell.EventKey) {
+	lineIdx := e.cursor.y + e.cursor.scrolloffset
 	switch ev.Key() {
 	case tcell.KeyCtrlQ, tcell.KeyEscape:
 		return
@@ -148,6 +149,11 @@ func handleNormalMode(e *editor, ev *tcell.EventKey) {
 		switch ev.Rune() {
 		case 'q':
 			return
+		case 'x':
+		if lineIdx < len(e.lines) && e.cursor.x > 0 {
+			line := e.lines[lineIdx]
+			e.lines[lineIdx] = line[:e.cursor.x] + line[e.cursor.x+1:]
+		}
 		case 'i':
 			e.mode = INSERT_MODE
 		case 'o': // go in insert mode and add a new line down
