@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	NORMAL_MODE  = iota
-	INSERT_MODE  = iota
-	COMMAND_MODE = iota
+	NORMAL_MODE = iota
+	INSERT_MODE
+	COMMAND_MODE
 )
 
 // Structure for holding cursor position
@@ -27,11 +27,12 @@ type cursor struct {
 type editor struct {
 	screen    tcell.Screen
 	style     tcell.Style
-	mode      int8
+	mode      int
 	lines     []string
 	cursor    cursor
 	cmdbuf    string
 	statusmsg string
+	fname     string
 }
 
 // Function for initializing cursor state based on file size
@@ -60,6 +61,7 @@ func initEditor(e *editor, lines []string) {
 	e.lines = lines
 	e.cmdbuf = ""
 	e.statusmsg = ""
+	e.fname = os.Args[1]
 
 	initCursor(&e.cursor, e.lines)
 
@@ -84,6 +86,7 @@ func draw(e *editor) {
 	}
 
 	// Draw status line
+	// TODO: create a structure to hold status bar state
 	var status string
 	if e.mode == COMMAND_MODE {
 		status = ":" + e.cmdbuf
@@ -132,16 +135,171 @@ func wlines(filename string, lines []string) error {
 	return writer.Flush()
 }
 
-func main() {
-	// TODO: Handle what to do when no file is provided
-	if len(os.Args) == 1 {
-	}
-	// TODO: Check if file exists, if not create it
-	if len(os.Args) == 2 {
-	}
+// Handle NORMAL_MODE functionalities
+func handleNormalMode(e *editor, ev *tcell.EventKey) {
+	switch ev.Key() {
+	case tcell.KeyCtrlQ, tcell.KeyEscape:
+		return
+	default:
+		switch ev.Rune() {
+		case 'q':
+			return
+		case 'i':
+			e.mode = INSERT_MODE
+		case 'o': // go in insert mode and add a new line down
+			e.mode = INSERT_MODE
+			lineIdx := e.cursor.y + e.cursor.scrolloffset
+			if lineIdx < len(e.lines) {
+				// Insert new line with 'after' part
+				e.lines = append(e.lines[:lineIdx+1], append([]string{""}, e.lines[lineIdx+1:]...)...)
+				e.cursor.y++
+				e.cursor.x = 0
 
-	// Open file provided from stdin as first argument
-	file, err := os.Open(os.Args[1])
+				// If cursor is at bottom of screen, scroll
+				_, h := e.screen.Size()
+				if e.cursor.y >= h-1 {
+					e.cursor.scrolloffset++
+					e.cursor.y = h - 2
+				}
+			}
+		case 'O': // go in insert mode and add a new line up
+			e.mode = INSERT_MODE
+			lineIdx := e.cursor.y + e.cursor.scrolloffset
+			if lineIdx < len(e.lines) {
+				// Insert new line with 'before' current line
+				e.lines = append(e.lines[:lineIdx], append([]string{""}, e.lines[lineIdx:]...)...)
+				e.cursor.x = 0
+			}
+		case 'j': // scroll down
+			// NOTE: if we are at the last line displayed on screen then
+			// change scrolloffset, else just change the cursor position
+			if e.cursor.scrolloffset+e.cursor.y+1 < len(e.lines) {
+				_, h := e.screen.Size() // Screen height
+				if e.cursor.y < h-2 {
+					e.cursor.y++
+				} else {
+					e.cursor.scrolloffset++
+				}
+			}
+		case 'k': // scroll up
+			if e.cursor.y > 0 {
+				e.cursor.y--
+			} else if e.cursor.scrolloffset > 0 {
+				e.cursor.scrolloffset--
+			}
+		case 'h': // move left
+			if e.cursor.x > 0 {
+				e.cursor.x--
+			}
+		case 'l': // move right
+			e.cursor.x++
+		case ':':
+			e.mode = COMMAND_MODE
+			e.cmdbuf = ""
+			e.statusmsg = ""
+		}
+	}
+}
+
+// Handle INSERT_MODE functionalities
+func handleInsertMode(e *editor, ev *tcell.EventKey) {
+	lineIdx := e.cursor.y + e.cursor.scrolloffset
+	switch ev.Key() {
+	case tcell.KeyESC:
+		e.mode = NORMAL_MODE
+		// Here we handle deleting in insert mode
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		if lineIdx < len(e.lines) && e.cursor.x > 0 {
+			line := e.lines[lineIdx]
+			e.lines[lineIdx] = line[:e.cursor.x-1] + line[e.cursor.x:]
+			e.cursor.x--
+		}
+	case tcell.KeyEnter:
+		if lineIdx < len(e.lines) {
+			line := e.lines[lineIdx]
+			// Split the line at cursorX
+			before := line[:e.cursor.x]
+			after := line[e.cursor.x:]
+			// Insert new line with 'after' part
+			e.lines = append(e.lines[:lineIdx+1], append([]string{after}, e.lines[lineIdx+1:]...)...)
+			e.lines[lineIdx] = before
+			e.cursor.y++
+			e.cursor.x = 0
+
+			// If cursor is at bottom of screen, scroll
+			_, h := e.screen.Size()
+			if e.cursor.y >= h-1 {
+				e.cursor.scrolloffset++
+				e.cursor.y = h - 2
+			}
+		}
+		// Here we handle writing characters in insert mode
+	case tcell.KeyRune:
+		lineIdx := e.cursor.y + e.cursor.scrolloffset
+		if lineIdx < len(e.lines) {
+			line := e.lines[lineIdx]
+			r := ev.Rune()
+			if e.cursor.x > len(line) {
+				e.cursor.x = len(line)
+			}
+			e.lines[lineIdx] = line[:e.cursor.x] + string(r) + line[e.cursor.x:]
+			e.cursor.x++
+		}
+	}
+}
+
+// Handle COMMAND_MODE functionalities
+func handleCommandMode(e *editor, ev *tcell.EventKey) {
+	switch ev.Key() {
+	case tcell.KeyEsc:
+		e.mode = NORMAL_MODE
+		e.cmdbuf = ""
+		e.statusmsg = ""
+	case tcell.KeyEnter:
+		cmd := strings.TrimSpace(e.cmdbuf)
+
+		// NOTE: Here we handle commands in COMMAND_MODE
+		switch cmd {
+		case "w":
+			err := wlines(e.fname, e.lines)
+			if err != nil {
+				e.statusmsg = fmt.Sprintf("Error writing: %v", err)
+			} else {
+				e.statusmsg = fmt.Sprintf("Wrote to %s", e.fname)
+			}
+		case "q":
+			e.screen.Fini()
+			os.Exit(0)
+		case "wq":
+			err := wlines(e.fname, e.lines)
+			if err != nil {
+				e.statusmsg = fmt.Sprintf("Error writing: %v", err)
+				e.mode = NORMAL_MODE
+			} else {
+				e.screen.Fini()
+				os.Exit(0)
+			}
+		default:
+			e.statusmsg = "Unknown command: " + cmd
+			e.mode = NORMAL_MODE
+		}
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		if len(e.cmdbuf) > 0 {
+			e.cmdbuf = e.cmdbuf[:len(e.cmdbuf)-1]
+		}
+	case tcell.KeyRune:
+		e.cmdbuf += string(ev.Rune())
+	}
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		log.Fatalf("Usage: %s <filename>", os.Args[0])
+	}
+	filename := os.Args[1]
+
+	// Try to open file, create if it doesn't exist
+	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 644)
 	if err != nil {
 		log.Fatalf("Failed to open file: %v", err)
 	}
@@ -170,129 +328,11 @@ func main() {
 		case *tcell.EventKey:
 			switch e.mode {
 			case NORMAL_MODE:
-				switch ev.Key() {
-				case tcell.KeyCtrlQ, tcell.KeyEscape:
-					return
-				default:
-					switch ev.Rune() {
-					case 'q':
-						return
-					case 'i':
-						e.mode = INSERT_MODE
-					case 'j': // scroll down
-						// NOTE: if we are at the last line displayed on screen then
-						// change scrolloffset, else just change the cursor position
-						if e.cursor.scrolloffset+e.cursor.y+1 < len(e.lines) {
-							_, h := e.screen.Size() // Screen height
-							if e.cursor.y < h-1 {
-								e.cursor.y++
-							} else {
-								e.cursor.scrolloffset++
-							}
-						}
-					case 'k': // scroll up
-						if e.cursor.y > 0 {
-							e.cursor.y--
-						} else if e.cursor.scrolloffset > 0 {
-							e.cursor.scrolloffset--
-						}
-					case 'h': // move left
-						if e.cursor.x > 0 {
-							e.cursor.x--
-						}
-					case 'l': // move right
-						e.cursor.x++
-					case ':':
-						e.mode = COMMAND_MODE
-						e.cmdbuf = ""
-						e.statusmsg = ""
-					}
-				}
+				handleNormalMode(&e, ev)
 			case INSERT_MODE:
-				lineIdx := e.cursor.y + e.cursor.scrolloffset
-				switch ev.Key() {
-				case tcell.KeyESC:
-					e.mode = NORMAL_MODE
-					// Here we handle deleting in insert mode
-				case tcell.KeyBackspace, tcell.KeyBackspace2:
-					if lineIdx < len(e.lines) && e.cursor.x > 0 {
-						line := e.lines[lineIdx]
-						e.lines[lineIdx] = line[:e.cursor.x-1] + line[e.cursor.x:]
-						e.cursor.x--
-					}
-				case tcell.KeyEnter:
-					if lineIdx < len(e.lines) {
-						line := e.lines[lineIdx]
-						// Split the line at cursorX
-						before := line[:e.cursor.x]
-						after := line[e.cursor.x:]
-						// Insert new line with 'after' part
-						e.lines = append(e.lines[:lineIdx+1], append([]string{after}, e.lines[lineIdx+1:]...)...)
-						e.lines[lineIdx] = before
-						e.cursor.y++
-						e.cursor.x = 0
-
-						// If cursor is at bottom of screen, scroll
-						_, h := e.screen.Size()
-						if e.cursor.y >= h-1 {
-							e.cursor.scrolloffset++
-							e.cursor.y = h - 2
-						}
-					}
-					// Here we handle writing characters in insert mode
-				case tcell.KeyRune:
-					lineIdx := e.cursor.y + e.cursor.scrolloffset
-					if lineIdx < len(e.lines) {
-						line := e.lines[lineIdx]
-						r := ev.Rune()
-						if e.cursor.x > len(line) {
-							e.cursor.x = len(line)
-						}
-						e.lines[lineIdx] = line[:e.cursor.x] + string(r) + line[e.cursor.x:]
-						e.cursor.x++
-					}
-				}
+				handleInsertMode(&e, ev)
 			case COMMAND_MODE:
-				switch ev.Key() {
-				case tcell.KeyEsc:
-					e.mode = NORMAL_MODE
-					e.cmdbuf = ""
-					e.statusmsg = ""
-				case tcell.KeyEnter:
-					cmd := strings.TrimSpace(e.cmdbuf)
-
-					// NOTE: Here we handle commands in COMMAND_MODE
-					switch cmd {
-					case "w":
-						err := wlines(os.Args[1], e.lines)
-						if err != nil {
-							e.statusmsg = fmt.Sprintf("Error writing: %v", err)
-						} else {
-							e.statusmsg = fmt.Sprintf("Wrote to %s", os.Args[1])
-						}
-					case "q":
-						e.screen.Fini()
-						os.Exit(0)
-					case "wq":
-						err := wlines(os.Args[1], e.lines)
-						if err != nil {
-							e.statusmsg = fmt.Sprintf("Error writing: %v", err)
-							e.mode = NORMAL_MODE
-						} else {
-							e.screen.Fini()
-							os.Exit(0)
-						}
-					default:
-						e.statusmsg = "Unknown command: " + cmd
-						e.mode = NORMAL_MODE
-					}
-				case tcell.KeyBackspace, tcell.KeyBackspace2:
-					if len(e.cmdbuf) > 0 {
-						e.cmdbuf = e.cmdbuf[:len(e.cmdbuf)-1]
-					}
-				case tcell.KeyRune:
-					e.cmdbuf += string(ev.Rune())
-				}
+				handleCommandMode(&e, ev)
 			}
 			draw(&e)
 		case *tcell.EventResize:
