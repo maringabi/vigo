@@ -176,6 +176,10 @@ func handleNormalMode(e *editor, ev *tcell.EventKey) {
 			} else {
 				e.lastkey = 'G'
 			}
+		case '$': // go to the end of the current line
+			e.cursor.x = len(e.lines[lineIdx])
+		case '0': // go to the start of the current line
+			e.cursor.x = 0
 		case 'd':
 			if e.lastkey == 'd' {
 				if lineIdx < len(e.lines) {
