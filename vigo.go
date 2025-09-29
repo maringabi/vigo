@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -33,6 +34,7 @@ type editor struct {
 	cmdbuf    string
 	statusmsg string
 	fname     string
+	lastkey   rune
 }
 
 // Function for initializing cursor state based on file size
@@ -66,6 +68,7 @@ func initEditor(e *editor, lines []string) {
 	e.cmdbuf = ""
 	e.statusmsg = ""
 	e.fname = os.Args[1]
+	e.lastkey = 0
 
 	initCursor(&e.cursor, e.lines)
 
@@ -150,10 +153,29 @@ func handleNormalMode(e *editor, ev *tcell.EventKey) {
 		case 'q':
 			return
 		case 'x':
-		if lineIdx < len(e.lines) && e.cursor.x > 0 {
-			line := e.lines[lineIdx]
-			e.lines[lineIdx] = line[:e.cursor.x] + line[e.cursor.x+1:]
-		}
+			if lineIdx < len(e.lines) && e.cursor.x > 0 {
+				line := e.lines[lineIdx]
+				e.lines[lineIdx] = line[:e.cursor.x] + line[e.cursor.x+1:]
+			}
+		case 'd':
+			if e.lastkey == 'd' {
+				if lineIdx < len(e.lines) {
+					e.lines = slices.Delete(e.lines, lineIdx, lineIdx+1)
+					if len(e.lines) == 0 {
+						e.lines = append(e.lines, "")
+					}
+					if e.cursor.y+e.cursor.scrolloffset >= len(e.lines) {
+						if e.cursor.y > 0 {
+							e.cursor.y--
+						} else if e.cursor.scrolloffset > 0 {
+							e.cursor.scrolloffset--
+						}
+					}
+				}
+				e.lastkey = 0 // reset
+			} else {
+				e.lastkey = 'd'
+			}
 		case 'i':
 			e.mode = INSERT_MODE
 		case 'o': // go in insert mode and add a new line down
