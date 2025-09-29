@@ -145,6 +145,7 @@ func wlines(filename string, lines []string) error {
 // Handle NORMAL_MODE functionalities
 func handleNormalMode(e *editor, ev *tcell.EventKey) {
 	lineIdx := e.cursor.y + e.cursor.scrolloffset
+	_, height := e.screen.Size()
 	switch ev.Key() {
 	case tcell.KeyCtrlQ, tcell.KeyEscape:
 		return
@@ -156,6 +157,24 @@ func handleNormalMode(e *editor, ev *tcell.EventKey) {
 			if lineIdx < len(e.lines) && e.cursor.x > 0 {
 				line := e.lines[lineIdx]
 				e.lines[lineIdx] = line[:e.cursor.x] + line[e.cursor.x+1:]
+			}
+		case 'g':
+			if e.lastkey == 'g' {
+				e.cursor.scrolloffset = len(e.lines) - height + 1
+				e.cursor.y = len(e.lines) - e.cursor.scrolloffset - 1
+				e.cursor.x = 0
+				e.lastkey = 0
+			} else {
+				e.lastkey = 'g'
+			}
+		case 'G':
+			if e.lastkey == 'G' {
+				e.cursor.scrolloffset = 0
+				e.cursor.y = 0
+				e.cursor.x = 0
+				e.lastkey = 0
+			} else {
+				e.lastkey = 'G'
 			}
 		case 'd':
 			if e.lastkey == 'd' {
